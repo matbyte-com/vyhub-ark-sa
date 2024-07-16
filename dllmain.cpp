@@ -288,8 +288,53 @@ void vylogin(AShooterPlayerController* player_controller, FString* message, int,
 
 }
 
+void vh_setup(AShooterPlayerController* shooter_controller, FString* message, int, int)
+{
+	if (shooter_controller->bIsAdmin().Get() == false)
+	{
+		AsaApi::GetApiUtils().SendChatMessage(shooter_controller, "Server", "You need to be an admin to execute this command!");
+		return;
+	}
 
-void vh_setup(APlayerController* player, FString* message, bool)
+	// The message has the form /vh_setup <api_key> <api_url> <server_id> <serverbundle_id>
+	const std::string config_path = AsaApi::Tools::GetCurrentDir() + "/ArkApi/Plugins/VyHub/config.json";
+	std::ifstream file{ config_path };
+	nlohmann::json j;
+	file >> j;
+
+	TArray<FString> parsed;
+	message->ParseIntoArray(parsed, L" ", true);
+
+	if (parsed.Num() != 5)
+	{
+		AsaApi::GetApiUtils().SendServerMessage(shooter_controller, FLinearColor(255, 255, 0), "Invalid number of arguments: /vh_setup <api_key> <api_url> <server_id> <serverbundle_id>");
+		return;
+	}
+
+	j["api_key"] = TCHAR_TO_UTF8(*parsed[1]);
+
+	// Split the API Url into two parts as the library only allows for base ulr and no suffix
+	std::string url = TCHAR_TO_UTF8(*parsed[2]);
+	size_t slashPos = url.find("/", 8);
+	j["api_url"] = url.substr(0, slashPos); // eg. https://vyhub.app
+	j["api_suffix"] = url.substr(slashPos); // eg. /api/v1
+
+	Log::GetLog()->info("Config edited: Api Url: %s", TCHAR_TO_UTF8(*parsed[2]));
+	j["server_id"] = TCHAR_TO_UTF8(*parsed[3]);
+	Log::GetLog()->info("Config edited: Server Id: %s", TCHAR_TO_UTF8(*parsed[3]));
+	j["serverbundle_id"] = TCHAR_TO_UTF8(*parsed[4]);
+	Log::GetLog()->info("Config edited: Serverbundle Id: %s", TCHAR_TO_UTF8(*parsed[4]));
+
+	std::ofstream o(config_path);
+	o << std::setw(4) << j << std::endl;
+
+	AsaApi::GetApiUtils().SendServerMessage(shooter_controller, FLinearColor(255, 255, 0), "Config Set");
+	ReadConfig();
+	CheckReady();
+}
+
+
+void vh_setup_console(APlayerController* player, FString* message, bool)
 {
 	auto* shooter_controller = static_cast<AShooterPlayerController*>(player);
 
@@ -337,7 +382,8 @@ BOOL Load()
 	{
 		Log::Get().Init("VyHub");
 
-		AsaApi::GetCommands().AddConsoleCommand("/vh_setup", &vh_setup);
+		AsaApi::GetCommands().AddChatCommand("/vh_setup", &vh_setup);
+		AsaApi::GetCommands().AddConsoleCommand("/vh_setup", &vh_setup_console);
 		AsaApi::GetCommands().AddChatCommand("/vylogin", &vylogin);
 		AsaApi::GetHooks().SetHook("AShooterGameMode.HandleNewPlayer_Implementation(AShooterPlayerController*,UPrimalPlayerData*,AShooterCharacter*,bool)", &Hook_AShooterGameMode_HandleNewPlayer, &AShooterGameMode_HandleNewPlayer_original);
 		AsaApi::GetHooks().SetHook("AShooterCharacter.Die(float,FDamageEvent&,AController*,AActor*)", &Hook_AShooterCharacter_Die, &AShooterCharacter_Die_original);
@@ -359,7 +405,8 @@ BOOL Load()
 BOOL Unload()
 {
 	AsaApi::GetCommands().RemoveConsoleCommand("/vh_setup");
-	AsaApi::GetCommands().RemoveConsoleCommand("/vylogin");
+	AsaApi::GetCommands().RemoveChatCommand("/vylogin");
+	AsaApi::GetCommands().RemoveChatCommand("/vh_setup");
 
 	AsaApi::GetHooks().DisableHook("AShooterCharacter.Die(float,FDamageEvent&,AController*,AActor*)", &Hook_AShooterCharacter_Die);
 	AsaApi::GetHooks().DisableHook("AShooterGameMode.Logout(AController*)", &Hook_AShooterGameMode_Logout);
